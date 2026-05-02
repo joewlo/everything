@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Everything — Personal Diary</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+
+  <!-- LEFT PANEL — Notes List -->
+  <aside id="left-panel">
+    <div class="panel-header">
+      <h1>Everything</h1>
+      <button id="btn-theme" class="btn-theme" title="Toggle theme">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      </button>
+    </div>
+
+    <div class="search-box">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input type="text" id="search-input" placeholder="Search notes…" autocomplete="off">
+    </div>
+
+    <button id="btn-new-note" class="btn primary full">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+      New
+    </button>
+
+    <div class="export-row">
+      <button id="btn-export" class="btn small" title="Download all notes as zip">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export
+      </button>
+      <span id="notes-count" class="notes-count"></span>
+    </div>
+
+    <nav id="notes-list">
+      <div id="notes-list-inner"></div>
+    </nav>
+  </aside>
+
+  <!-- MAIN PANEL — Note Editor -->
+  <main id="main-panel">
+    <div id="empty-state">
+      <div class="empty-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      </div>
+      <h2>Welcome to Everything</h2>
+      <p>Start by creating a note, recording your voice, or dragging a file here.</p>
+      <div class="empty-actions">
+        <button class="btn primary" onclick="document.getElementById('btn-new-note').click()">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> New Note
+        </button>
+        <button class="btn" onclick="startRecording()" id="btn-empty-record">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg> Record
+        </button>
+      </div>
+    </div>
+
+    <div id="editor" style="display:none">
+      <div id="editor-toolbar">
+        <input type="text" id="note-title" placeholder="Note title… (auto-generated if left empty)">
+        <span id="title-spinner" class="title-spinner" style="display:none">⠋</span>
+        <div class="toolbar-actions">
+          <span id="note-meta"></span>
+          <button id="btn-save" class="btn" title="Save (⌘S)">Save</button>
+          <button id="btn-delete" class="btn danger" title="Delete">Delete</button>
+        </div>
+      </div>
+
+      <div id="editor-body">
+        <textarea id="note-content" placeholder="Start writing markdown…&#10;&#10;Drag &amp; drop images/files here to attach.&#10;Click the mic to record your voice."></textarea>
+        <div id="note-preview" class="prose"></div>
+        <div id="note-preview" class="prose" style="display:none"></div>
+      </div>
+
+      <div id="editor-footer">
+        <div class="footer-left">
+          <button id="btn-record" class="btn record-btn" title="Start recording">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+            Record
+          </button>
+          <button id="btn-stop" class="btn stop-btn" title="Stop recording" style="display:none">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+            Stop
+          </button>
+          <div id="drop-indicator" style="display:none">Drop file to add</div>
+        </div>
+        <div class="footer-right">
+          <span id="saved-indicator">Saved</span>
+          <span id="word-count">0 words</span>
+          <button id="btn-preview" class="btn small" title="Toggle preview">Preview</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- RIGHT PANEL — Ask, Actions & Todos -->
+  <aside id="right-panel">
+    <!-- Ask your notes -->
+    <div class="panel-section">
+      <h3>Ask Your Notes</h3>
+      <div class="ask-row">
+        <input type="text" id="ask-input" placeholder="Ask anything about your notes…" autocomplete="off">
+        <button id="btn-ask" class="btn small">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="panel-divider"></div>
+
+    <!-- AI Actions -->
+    <div class="panel-section">
+      <h3>AI Actions</h3>
+      <div class="ai-buttons">
+        <button id="btn-summarize" class="btn ai" disabled>
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          Summarize
+        </button>
+        <button id="btn-reflect" class="btn ai" disabled>
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+          Reflect
+        </button>
+        <button id="btn-extract-actions" class="btn ai" disabled>
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+          Extract Actions
+        </button>
+      </div>
+      <div id="ai-results"></div>
+    </div>
+
+    <div class="panel-divider"></div>
+
+    <!-- Global Todos -->
+    <div class="panel-section todos-section">
+      <h3>Global Todo</h3>
+      <div class="todo-input-row">
+        <input type="text" id="todo-input" placeholder="Add a todo…" autocomplete="off">
+        <button id="btn-add-todo" class="btn small">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
+      <ul id="todos-list"></ul>
+    </div>
+  </aside>
+
+  <!-- Toast -->
+  <div id="toast"></div>
+
+  <!-- Chat Modal -->
+  <div id="chat-modal" class="modal-overlay" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Ask Your Notes</h3>
+        <button id="btn-close-modal" class="btn small">&times;</button>
+      </div>
+      <div id="chat-history"></div>
+      <div class="modal-footer">
+        <input type="text" id="chat-input" placeholder="Ask a question or follow up…" autocomplete="off">
+        <button id="btn-chat-send" class="btn primary small">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

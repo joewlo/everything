@@ -1,0 +1,20 @@
+{
+  "name": "everything",
+  "version": "1.0.0",
+  "description": "Personal diary and notes app — voice, text, files, AI",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "setup": "bash scripts/setup.sh",
+    "serve": "bash scripts/serve.sh"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "gray-matter": "^4.0.3",
+    "multer": "^1.4.5-lts.1",
+    "uuid": "^10.0.0"
+  }
+}
