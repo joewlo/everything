@@ -275,6 +275,13 @@ body {
   background: var(--bg-panel); border-left: 1px solid var(--border);
   display: flex; flex-direction: column; overflow: hidden;
 }
+#right-top {
+  flex: 0 0 auto; overflow-y: auto; max-height: 50%;
+}
+#right-bottom {
+  flex: 1 1 auto; display: flex; flex-direction: column;
+  overflow: hidden; border-top: 1px solid var(--border);
+}
 .panel-section { padding: 16px 20px; }
 .panel-section h3 {
   font-size: 12px; font-weight: 600; text-transform: uppercase;
@@ -312,6 +319,7 @@ body {
 
 #ai-results {
   margin-top: 12px; display: flex; flex-direction: column; gap: 10px;
+  max-height: 300px; overflow-y: auto;
 }
 .ai-result {
   padding: 12px; border-radius: var(--radius-sm);
