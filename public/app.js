@@ -65,6 +65,9 @@ const state = {
   mediaRecorder: null,
   dirty: false,
   saveTimer: null,
+  sortBy: localStorage.getItem('sortBy') || 'date',
+  compact: localStorage.getItem('compact') === '1',
+  tagFilter: '',
 };
 
 // ── UTILS ────────────────────────────────────────────────────────────
@@ -126,9 +129,31 @@ const API = {
 function renderNoteList() {
   const container = $('#notes-list-inner');
   const q = state.searchQuery.toLowerCase();
-  const filtered = q
-    ? state.notes.filter(n => (n.title || '').toLowerCase().includes(q) || (n.contentPreview || '').toLowerCase().includes(q))
-    : state.notes;
+
+  let notes = [...state.notes];
+
+  // Tag filter
+  if (state.tagFilter) {
+    notes = notes.filter(n => (n.tags || []).includes(state.tagFilter));
+  }
+
+  // Search filter
+  if (q) {
+    notes = notes.filter(n =>
+      (n.title || '').toLowerCase().includes(q) ||
+      (n.contentPreview || '').toLowerCase().includes(q)
+    );
+  }
+
+  // Sort
+  if (state.sortBy === 'title') {
+    notes.sort((a, b) => (a.title || 'Untitled').localeCompare(b.title || 'Untitled'));
+  } else {
+    notes.sort((a, b) => new Date(b.modified || b.date) - new Date(a.modified || a.date));
+  }
+
+  // Update tag chips
+  updateTagChips();
 
   $('#notes-count').textContent = `${state.notes.length} note${state.notes.length !== 1 ? 's' : ''}`;
 
@@ -136,25 +161,50 @@ function renderNoteList() {
     container.innerHTML = '<div id="notes-list-empty">No notes yet. Create your first one!</div>';
     return;
   }
-  if (q && !filtered.length) {
-    container.innerHTML = `<div id="notes-list-empty">No results for "${escapeHtml(q)}"</div>`;
+  if ((q || state.tagFilter) && !notes.length) {
+    container.innerHTML = '<div id="notes-list-empty">No results.</div>';
     return;
   }
 
-  container.innerHTML = filtered.map(n => `
-    <div class="note-item${n.id === state.activeId ? ' active' : ''}" data-id="${n.id}">
+  container.innerHTML = notes.map(n => {
+    const preview = state.compact ? '' : `<div class="note-item-preview">${escapeHtml(n.contentPreview || '')}</div>`;
+    const tags = (n.tags || []).map(t => `<span class="note-item-tag">${escapeHtml(t)}</span>`).join('');
+    return `<div class="note-item${n.id === state.activeId ? ' active' : ''}${state.compact ? ' compact' : ''}" data-id="${n.id}">
       <div class="note-item-title">${escapeHtml(n.title || 'Untitled')}</div>
       <div class="note-item-meta">
         <span>${formatDate(n.modified || n.date)}</span>
         ${n.source === 'voice' ? '<span class="note-item-tag">🎤 voice</span>' : ''}
         ${n.source === 'file' ? '<span class="note-item-tag">📎 file</span>' : ''}
       </div>
-      ${n.summary ? `<div class="note-item-preview">${escapeHtml(n.summary)}</div>` : ''}
-    </div>
-  `).join('');
+      ${preview}
+      ${tags ? `<div class="note-item-tags">${tags}</div>` : ''}
+    </div>`;
+  }).join('');
 
   container.querySelectorAll('.note-item').forEach(el => {
     el.addEventListener('click', () => loadNote(el.dataset.id));
+  });
+}
+
+function updateTagChips() {
+  const allTags = new Set();
+  state.notes.forEach(n => (n.tags || []).forEach(t => allTags.add(t)));
+  const container = $('#tag-filter');
+  if (allTags.size === 0) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = 'flex';
+  const chips = ['<span class="tag-chip' + (!state.tagFilter ? ' active' : '') + '" data-tag="">All</span>'];
+  allTags.forEach(t => {
+    chips.push(`<span class="tag-chip${state.tagFilter === t ? ' active' : ''}" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</span>`);
+  });
+  container.innerHTML = '<span class="tag-filter-label">Folder:</span>' + chips.join('');
+  container.querySelectorAll('.tag-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      state.tagFilter = chip.dataset.tag;
+      renderNoteList();
+    });
   });
 }
 
@@ -166,6 +216,10 @@ async function loadNote(id) {
   if (state.dirty && state.activeId) {
     await autoSave(true);
   }
+
+  // Close mobile panels
+  $('#left-panel').classList.remove('open');
+  $('#right-panel').classList.remove('open');
 
   try {
     currentNote = await API.getNote(id);
@@ -286,6 +340,25 @@ async function deleteCurrentNote() {
     }
   } catch (err) {
     toast('Delete failed: ' + err.message, 'error');
+  }
+}
+
+async function duplicateNote() {
+  if (!state.activeId) return;
+  try {
+    const note = await API.getNote(state.activeId);
+    const dup = await API.createNote({
+      title: (note.title || 'Untitled') + ' (copy)',
+      content: note.content,
+      source: note.source || 'typed',
+      tags: note.tags || [],
+    });
+    state.activeId = dup.id;
+    await refreshNotes();
+    await loadNote(dup.id);
+    toast('Duplicated', 'success');
+  } catch (err) {
+    toast('Duplicate failed: ' + err.message, 'error');
   }
 }
 
@@ -973,6 +1046,9 @@ $('#search-input').addEventListener('input', e => {
 function openChat() {
   const askInput = $('#ask-input');
   const question = askInput.value.trim();
+  // Close mobile side panels
+  $('#left-panel').classList.remove('open');
+  $('#right-panel').classList.remove('open');
   $('#chat-modal').style.display = 'flex';
   $('#chat-input').focus();
   if (question) {
@@ -1078,6 +1154,7 @@ function bindEvents() {
     toast('Saved', 'success');
   });
   $('#btn-delete').addEventListener('click', deleteCurrentNote);
+  $('#btn-duplicate').addEventListener('click', duplicateNote);
 
   $('#note-title').addEventListener('input', markDirty);
   $('#note-content').addEventListener('input', () => {
@@ -1137,7 +1214,20 @@ function bindEvents() {
     if (e.key === 'Enter') addTodo();
   });
 
-  // Export
+  // Sort & compact
+  $('#sort-by').value = state.sortBy;
+  $('#sort-by').addEventListener('change', e => {
+    state.sortBy = e.target.value;
+    localStorage.setItem('sortBy', state.sortBy);
+    renderNoteList();
+  });
+  if (state.compact) $('#btn-compact').classList.add('active');
+  $('#btn-compact').addEventListener('click', () => {
+    state.compact = !state.compact;
+    localStorage.setItem('compact', state.compact ? '1' : '0');
+    $('#btn-compact').classList.toggle('active', state.compact);
+    renderNoteList();
+  });
   $('#btn-export').addEventListener('click', () => {
     window.open('/api/export', '_blank');
   });
@@ -1151,10 +1241,50 @@ function bindEvents() {
   setupDragDrop();
 }
 
+// ── MOBILE NAV ───────────────────────────────────────────────────────
+function initMobileNav() {
+  const btns = $$('.mob-btn');
+  const left = $('#left-panel');
+  const right = $('#right-panel');
+
+  btns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const panel = btn.dataset.panel;
+
+      // Update active state
+      btns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      // Handle panels
+      if (panel === 'notes') {
+        left.classList.add('open');
+        right.classList.remove('open');
+      } else if (panel === 'todos') {
+        right.classList.add('open');
+        left.classList.remove('open');
+      } else if (panel === 'ask') {
+        left.classList.remove('open');
+        right.classList.remove('open');
+        openChat();
+      } else {
+        left.classList.remove('open');
+        right.classList.remove('open');
+      }
+    });
+  });
+
+  // Close panels when clicking main
+  $('#main-panel').addEventListener('click', () => {
+    left.classList.remove('open');
+    right.classList.remove('open');
+  });
+}
+
 // ── INIT ─────────────────────────────────────────────────────────────
 async function init() {
   initTheme();
   initRightSplit();
+  initMobileNav();
   bindEvents();
 
   try {
