@@ -14,6 +14,47 @@ function initTheme() {
   }
 }
 
+// ── RIGHT PANEL SPLIT ────────────────────────────────────────────────
+function initRightSplit() {
+  const panel = $('#right-panel');
+  const handle = $('#right-split-handle');
+  const top = $('#right-top');
+  const bottom = $('#right-bottom');
+
+  const saved = localStorage.getItem('rightSplit');
+  if (saved) {
+    top.style.height = saved;
+    top.style.flex = 'none';
+    bottom.style.flex = '1 1 0';
+  }
+
+  let dragging = false;
+  let startY, startH;
+
+  handle.addEventListener('mousedown', e => {
+    dragging = true;
+    handle.classList.add('active');
+    startY = e.clientY;
+    startH = top.getBoundingClientRect().height;
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const dy = e.clientY - startY;
+    const newH = Math.max(60, Math.min(startH + dy, panel.clientHeight - 160));
+    top.style.height = newH + 'px';
+    top.style.flex = 'none';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('active');
+    localStorage.setItem('rightSplit', top.style.height);
+  });
+}
+
 // ── STATE ────────────────────────────────────────────────────────────
 const state = {
   notes: [],
@@ -930,8 +971,15 @@ $('#search-input').addEventListener('input', e => {
 
 // ── CHAT MODAL ───────────────────────────────────────────────────────
 function openChat() {
+  const askInput = $('#ask-input');
+  const question = askInput.value.trim();
   $('#chat-modal').style.display = 'flex';
   $('#chat-input').focus();
+  if (question) {
+    $('#chat-input').value = question;
+    askInput.value = '';
+    sendChatMessage();
+  }
 }
 
 function closeChat() {
@@ -1106,6 +1154,7 @@ function bindEvents() {
 // ── INIT ─────────────────────────────────────────────────────────────
 async function init() {
   initTheme();
+  initRightSplit();
   bindEvents();
 
   try {
