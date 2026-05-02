@@ -362,10 +362,77 @@ async function runFullPipeline() {
   const title = $('#note-title').value.trim();
   if (!content) return;
 
-  if (!title) await generateTitle();
-  await runAIActionAuto('summarize');
-  await runAIActionAuto('reflect');
-  await runAIActionAuto('extract-actions');
+  const container = $('#ai-results');
+  const steps = [];
+  const addStep = (label, cls) => {
+    const id = 'step-' + steps.length;
+    container.innerHTML += `<div class="ai-result" id="${id}"><div class="ai-result-label ${cls}">${label}</div><div class="ai-result-content" style="color:var(--text-dim)">Working…</div></div>`;
+    steps.push({ id, label });
+    container.scrollIntoView({ behavior: 'smooth' });
+  };
+  const doneStep = (id, content) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.querySelector('.ai-result-content').innerHTML = content;
+      el.querySelector('.ai-result-content').style.color = '';
+    }
+  };
+
+  container.innerHTML = '';
+
+  if (!title) {
+    addStep('📝 Generating title…', 'summarize');
+    try {
+      const res = await fetch(`/api/notes/${state.activeId}/generate-title`, { method: 'POST' });
+      if (res.ok) {
+        const d = await res.json();
+        if (d.title) {
+          $('#note-title').value = d.title;
+          doneStep(steps[0].id, escapeHtml(d.title));
+        }
+      } else {
+        doneStep(steps[0].id, '<span style="color:var(--text-dim)">unavailable</span>');
+      }
+    } catch {
+      doneStep(steps[0].id, '<span style="color:var(--text-dim)">LLM offline</span>');
+    }
+  }
+
+  addStep('💭 Summarizing…', 'summarize');
+  try {
+    const r = await API.summarizeNote(state.activeId);
+    doneStep(steps[steps.length - 1].id, escapeHtml(r.summary || ''));
+    currentNote = await API.getNote(state.activeId);
+  } catch {
+    doneStep(steps[steps.length - 1].id, '<span style="color:var(--text-dim)">LLM offline</span>');
+  }
+
+  addStep('🧠 Reflecting…', 'reflect');
+  try {
+    const r = await API.reflectNote(state.activeId);
+    doneStep(steps[steps.length - 1].id, escapeHtml(r.reflection || ''));
+    currentNote = await API.getNote(state.activeId);
+  } catch {
+    doneStep(steps[steps.length - 1].id, '<span style="color:var(--text-dim)">LLM offline</span>');
+  }
+
+  addStep('✅ Extracting actions…', 'actions');
+  try {
+    const r = await API.extractActions(state.activeId);
+    const items = (r.actions || []).map(a => {
+      const text = typeof a === 'string' ? a : a.text;
+      const due = typeof a === 'object' && a.dueDate ? ` <span style="font-size:10px;color:var(--text-dim)">due ${new Date(a.dueDate).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>` : '';
+      return `<li>${escapeHtml(text)}${due}</li>`;
+    });
+    doneStep(steps[steps.length - 1].id, items.length ? `<ul style="padding-left:16px;margin:0">${items.join('')}</ul>` : 'None found');
+    currentNote = await API.getNote(state.activeId);
+    await loadTodos();
+  } catch {
+    doneStep(steps[steps.length - 1].id, '<span style="color:var(--text-dim)">LLM offline</span>');
+  }
+
+  await refreshNotesSilent();
+  renderNoteList();
 }
 
 // Silent auto-run (no button changes, no toasts, used by autoSave)
