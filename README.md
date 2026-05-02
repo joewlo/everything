@@ -17,27 +17,47 @@ With a local LLM (llama.cpp) and whisper.cpp running, it auto-generates titles, 
 
 ## Setup
 
+### macOS / Linux
+
 ```bash
-# 1. Install dependencies
 npm install
+brew install llama.cpp          # or build from source
+npm run setup                   # downloads models from Hugging Face
+```
 
-# 2. Install llama.cpp (macOS)
-brew install llama.cpp
+### Windows
 
-# 3. Download models from Hugging Face
-npm run setup
+```powershell
+npm install
+npm run setup:win               # downloads llama.cpp, whisper.cpp & models
+```
 
-# (Optional) Use your own model:
-# LLM_REPO=ggml-org/gemma-4-E4B-it-GGUF npm run setup
+> `setup:win` fetches the latest Windows binaries from llama.cpp/whisper.cpp releases automatically.
+
+### Custom model
+
+```bash
+# Override the default model:
+LLM_REPO=unsloth/gemma-4-E4B-it-GGUF LLM_FILE=gemma-4-e4b-it-Q4_K_M.gguf npm run setup
 ```
 
 ## Running
 
-Open **two terminals**:
+### macOS / Linux
 
 ```bash
 # Terminal 1: Start LLM + whisper servers
 npm run serve
+
+# Terminal 2: Start the app
+npm start
+```
+
+### Windows
+
+```powershell
+# Terminal 1: Start servers
+npm run serve:win
 
 # Terminal 2: Start the app
 npm start
