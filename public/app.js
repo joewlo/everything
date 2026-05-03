@@ -513,36 +513,48 @@ async function runFullPipeline() {
   }
 
   addStep('💭 Summarizing…', 'summarize');
-  try {
-    const r = await API.summarizeNote(state.activeId);
-    doneStep(steps[steps.length - 1].id, escapeHtml(r.summary || ''));
-    currentNote = await API.getNote(state.activeId);
-  } catch {
-    doneStep(steps[steps.length - 1].id, '<span style="color:var(--text-dim)">LLM offline</span>');
-  }
-
   addStep('🧠 Reflecting…', 'reflect');
-  try {
-    const r = await API.reflectNote(state.activeId);
-    doneStep(steps[steps.length - 1].id, escapeHtml(r.reflection || ''));
-    currentNote = await API.getNote(state.activeId);
-  } catch {
-    doneStep(steps[steps.length - 1].id, '<span style="color:var(--text-dim)">LLM offline</span>');
-  }
-
   addStep('✅ Extracting actions…', 'actions');
+
+  // Run all 3 AI calls in parallel
+  const summarizeIdx = steps.length - 3;
+  const reflectIdx = steps.length - 2;
+  const actionsIdx = steps.length - 1;
+
   try {
-    const r = await API.extractActions(state.activeId);
-    const items = (r.actions || []).map(a => {
-      const text = typeof a === 'string' ? a : a.text;
-      const due = typeof a === 'object' && a.dueDate ? ` <span style="font-size:10px;color:var(--text-dim)">due ${new Date(a.dueDate).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>` : '';
-      return `<li>${escapeHtml(text)}${due}</li>`;
-    });
-    doneStep(steps[steps.length - 1].id, items.length ? `<ul style="padding-left:16px;margin:0">${items.join('')}</ul>` : 'None found');
+    const [sumResult, refResult, actResult] = await Promise.allSettled([
+      API.summarizeNote(state.activeId),
+      API.reflectNote(state.activeId),
+      API.extractActions(state.activeId),
+    ]);
+
+    if (sumResult.status === 'fulfilled') {
+      doneStep(steps[summarizeIdx].id, escapeHtml(sumResult.value.summary || ''));
+    } else {
+      doneStep(steps[summarizeIdx].id, '<span style="color:var(--text-dim)">LLM offline</span>');
+    }
+
+    if (refResult.status === 'fulfilled') {
+      doneStep(steps[reflectIdx].id, escapeHtml(refResult.value.reflection || ''));
+    } else {
+      doneStep(steps[reflectIdx].id, '<span style="color:var(--text-dim)">LLM offline</span>');
+    }
+
+    if (actResult.status === 'fulfilled') {
+      const items = (actResult.value.actions || []).map(a => {
+        const text = typeof a === 'string' ? a : a.text;
+        const due = typeof a === 'object' && a.dueDate ? ` <span style="font-size:10px;color:var(--text-dim)">due ${new Date(a.dueDate).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>` : '';
+        return `<li>${escapeHtml(text)}${due}</li>`;
+      });
+      doneStep(steps[actionsIdx].id, items.length ? `<ul style="padding-left:16px;margin:0">${items.join('')}</ul>` : 'None found');
+    } else {
+      doneStep(steps[actionsIdx].id, '<span style="color:var(--text-dim)">LLM offline</span>');
+    }
+
     currentNote = await API.getNote(state.activeId);
     await loadTodos();
   } catch {
-    doneStep(steps[steps.length - 1].id, '<span style="color:var(--text-dim)">LLM offline</span>');
+    // All failed
   }
 
   await refreshNotesSilent();
