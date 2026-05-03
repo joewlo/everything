@@ -520,6 +520,8 @@ If there are no action items, return []. Do not include any other text. Today's 
         done: false,
         createdAt: now,
         dueDate: a.dueDate || null,
+        sourceNoteId: req.params.id,
+        sourceNoteTitle: note.title || 'Untitled',
       }));
       await writeTodos([...existingTodos, ...newTodos]);
     }

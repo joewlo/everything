@@ -153,7 +153,14 @@
     <!-- Global Todos -->
     <div id="right-bottom">
     <div class="panel-section todos-section">
-      <h3>Global Todo</h3>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <h3 style="margin-bottom:0">Global Todo</h3>
+        <select id="group-by" class="small-select" style="width:auto;flex:none">
+          <option value="none">No grouping</option>
+          <option value="due">By Due Date</option>
+          <option value="note">By Note</option>
+        </select>
+      </div>
       <div class="todo-input-row">
         <input type="text" id="todo-input" placeholder="Add a todo…" autocomplete="off">
         <button id="btn-add-todo" class="btn small">

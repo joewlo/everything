@@ -622,52 +622,164 @@ async function loadTodos() {
 
 function renderTodos() {
   const list = $('#todos-list');
+  const groupBy = $('#group-by').value;
+
   if (!state.todos.length) {
     list.innerHTML = '<li id="todos-empty">No todos yet. Press Save or extract actions from a note.</li>';
     return;
   }
 
-  list.innerHTML = state.todos.map((t, i) => {
-    const created = t.createdAt ? new Date(t.createdAt) : null;
-    const due = t.dueDate ? new Date(t.dueDate) : null;
-    const createdStr = created ? created.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
-    const dueStr = due ? due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
-    const isOverdue = due && !t.done && due < new Date();
+  // Group-aware rendering
+  if (groupBy === 'due') {
+    renderGroupedByDue(list);
+  } else if (groupBy === 'note') {
+    renderGroupedByNote(list);
+  } else {
+    renderFlatTodos(list, state.todos);
+  }
+}
 
-    return `<li class="todo-item${t.done ? ' done' : ''}${isOverdue ? ' overdue' : ''}" data-index="${i}">
-      <div class="todo-check"></div>
-      <div class="todo-body">
-        <span class="todo-text">${escapeHtml(t.text)}</span>
-        <div class="todo-dates">
-          ${createdStr ? `<span class="todo-date">Created ${createdStr}</span>` : ''}
-          ${dueStr ? `<span class="todo-date todo-due${isOverdue ? ' overdue' : ''}">Due ${dueStr}</span>` : ''}
-          <span class="todo-set-due" data-index="${i}">${dueStr ? 'Change due' : 'Set due'}</span>
-        </div>
-      </div>
-      <button class="todo-delete" title="Remove">&times;</button>
+function renderFlatTodos(list, todos) {
+  list.innerHTML = todos.map((t, i) => todoItemHTML(t, i)).join('');
+  bindTodoEvents(list);
+}
+
+function renderGroupedByDue(list) {
+  const now = new Date(); now.setHours(0,0,0,0);
+  const tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1);
+  const weekEnd = new Date(now); weekEnd.setDate(weekEnd.getDate() + 7);
+
+  const groups = [
+    { label: 'Overdue', items: [], cls: 'overdue' },
+    { label: 'Today', items: [] },
+    { label: 'This Week', items: [] },
+    { label: 'Later', items: [] },
+    { label: 'No Due Date', items: [] },
+  ];
+
+  for (const t of state.todos) {
+    if (t.done) continue;
+    if (!t.dueDate) { groups[4].items.push(t); continue; }
+    const d = new Date(t.dueDate); d.setHours(0,0,0,0);
+    if (d < now) groups[0].items.push(t);
+    else if (d.getTime() === now.getTime()) groups[1].items.push(t);
+    else if (d < weekEnd) groups[2].items.push(t);
+    else groups[3].items.push(t);
+  }
+
+  // Done items at bottom
+  const done = state.todos.filter(t => t.done);
+
+  let html = '';
+  let idx = 0;
+  for (const g of groups) {
+    if (!g.items.length) continue;
+    html += `<li class="todo-group-header${g.cls ? ' ' + g.cls : ''}">${g.label} (${g.items.length})</li>`;
+    for (const t of g.items) {
+      html += todoItemHTML(t, idx++);
+    }
+  }
+  if (done.length) {
+    html += '<li class="todo-group-header">Done</li>';
+    for (const t of done) {
+      html += todoItemHTML(t, idx++, true);
+    }
+  }
+
+  list.innerHTML = html;
+  bindTodoEvents(list);
+}
+
+function renderGroupedByNote(list) {
+  const groups = {};
+  for (const t of state.todos) {
+    const key = t.sourceNoteTitle || 'Manual';
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(t);
+  }
+
+  const keys = Object.keys(groups).sort();
+  let html = '';
+  let idx = 0;
+  for (const key of keys) {
+    const items = groups[key];
+    const doneCount = items.filter(t => t.done).length;
+    html += `<li class="todo-group-header">
+      <span class="chat-ref-link" data-id="${items[0]?.sourceNoteId || ''}">${escapeHtml(key)}</span>
+      <span style="font-weight:400;font-size:10px;margin-left:4px">${doneCount}/${items.length}</span>
     </li>`;
-  }).join('');
+    for (const t of items) {
+      html += todoItemHTML(t, idx++, t.done);
+    }
+  }
 
+  list.innerHTML = html;
+  bindTodoEvents(list);
+
+  // Clickable note titles
+  list.querySelectorAll('.chat-ref-link').forEach(el => {
+    if (!el.dataset.id) return;
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      loadNote(el.dataset.id);
+    });
+  });
+}
+
+function todoItemHTML(t, i, isDone) {
+  const created = t.createdAt ? new Date(t.createdAt) : null;
+  const due = t.dueDate ? new Date(t.dueDate) : null;
+  const createdStr = created ? created.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+  const dueStr = due ? due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+  const isOverdue = due && !t.done && due < new Date();
+  const sourceTag = t.sourceNoteTitle ? `<span class="todo-source">${escapeHtml(t.sourceNoteTitle)}</span>` : '';
+
+  return `<li class="todo-item${t.done ? ' done' : ''}${isOverdue ? ' overdue' : ''}" data-id="${t.id}">
+    <div class="todo-check"></div>
+    <div class="todo-body">
+      <span class="todo-text">${escapeHtml(t.text)}</span>
+      <div class="todo-dates">
+        ${createdStr ? `<span class="todo-date">Created ${createdStr}</span>` : ''}
+        ${dueStr ? `<span class="todo-date todo-due${isOverdue ? ' overdue' : ''}">Due ${dueStr}</span>` : ''}
+        ${sourceTag}
+        <span class="todo-set-due" data-id="${t.id}">${dueStr ? 'Change due' : 'Set due'}</span>
+      </div>
+    </div>
+    <button class="todo-delete" title="Remove">&times;</button>
+  </li>`;
+}
+
+function bindTodoEvents(list) {
   list.querySelectorAll('.todo-item').forEach(el => {
-    const i = parseInt(el.dataset.index);
-    el.querySelector('.todo-check').addEventListener('click', () => toggleTodo(i));
+    const id = el.dataset.id;
+    el.querySelector('.todo-check').addEventListener('click', () => toggleTodoById(id));
     el.querySelector('.todo-delete').addEventListener('click', (e) => {
       e.stopPropagation();
-      removeTodo(i);
+      removeTodoById(id);
     });
   });
 
   list.querySelectorAll('.todo-set-due').forEach(el => {
     el.addEventListener('click', (e) => {
       e.stopPropagation();
-      const i = parseInt(el.dataset.index);
-      setDueDate(i);
+      setDueDateById(el.dataset.id);
     });
   });
 }
 
-async function setDueDate(index) {
-  const todo = state.todos[index];
+function toggleTodoById(id) {
+  const todo = state.todos.find(t => t.id === id);
+  if (todo) { todo.done = !todo.done; saveTodos(); }
+}
+
+function removeTodoById(id) {
+  const idx = state.todos.findIndex(t => t.id === id);
+  if (idx >= 0) { state.todos.splice(idx, 1); saveTodos(); }
+}
+
+async function setDueDateById(id) {
+  const todo = state.todos.find(t => t.id === id);
+  if (!todo) return;
   const current = todo.dueDate ? new Date(todo.dueDate).toISOString().slice(0, 10) : '';
   const input = prompt('Set due date (YYYY-MM-DD):', current);
   if (input === null) return;
@@ -692,6 +804,8 @@ async function addTodo() {
     done: false,
     createdAt: new Date().toISOString(),
     dueDate: null,
+    sourceNoteId: null,
+    sourceNoteTitle: null,
   });
   input.value = '';
   await saveTodos();
@@ -1213,6 +1327,7 @@ function bindEvents() {
   $('#todo-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') addTodo();
   });
+  $('#group-by').addEventListener('change', renderTodos);
 
   // Sort & compact
   $('#sort-by').value = state.sortBy;
