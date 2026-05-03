@@ -9,10 +9,31 @@ mkdir -p "$MODELS_DIR"
 WHISPER_FILE="${WHISPER_FILE:-ggml-base.en.bin}"
 WHISPER_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$WHISPER_FILE"
 
-# LLM model defaults — override with env vars
-# See available GGUF repos: https://huggingface.co/models?search=gemma-4-E4B-it-GGUF
-LLM_REPO="${LLM_REPO:-ggml-org/gemma-4-E4B-it-GGUF}"
-LLM_FILE="${LLM_FILE:-gemma-4-E4B-it-Q4_K_M.gguf}"
+# LLM model — pick E4B (4.5B effective) or E2B (2.3B effective, faster)
+# Override with MODEL=2 or MODEL=4, or choose interactively
+LLM_SIZE="${MODEL:-}"
+if [ -z "$LLM_SIZE" ]; then
+  echo ""
+  echo "  Choose a model:"
+  echo "    1) Gemma 4 E2B (2.3B effective, fast — best for laptops)"
+  echo "    2) Gemma 4 E4B (4.5B effective, smarter — default)"
+  echo ""
+  read -p "  Enter 1 or 2 [2]: " choice
+  case "${choice:-2}" in
+    1) LLM_SIZE="2" ;;
+    *) LLM_SIZE="4" ;;
+  esac
+fi
+
+if [ "$LLM_SIZE" = "2" ]; then
+  LLM_REPO="${LLM_REPO:-ggml-org/gemma-4-E2B-it-GGUF}"
+  LLM_FILE="${LLM_FILE:-gemma-4-E2B-it-Q4_K_M.gguf}"
+  LLM_LABEL="Gemma 4 E2B (2.3B)"
+else
+  LLM_REPO="${LLM_REPO:-ggml-org/gemma-4-E4B-it-GGUF}"
+  LLM_FILE="${LLM_FILE:-gemma-4-E4B-it-Q4_K_M.gguf}"
+  LLM_LABEL="Gemma 4 E4B (4.5B)"
+fi
 LLM_URL="https://huggingface.co/$LLM_REPO/resolve/main/$LLM_FILE"
 
 RED='\033[0;31m'
@@ -148,7 +169,7 @@ download_model() {
 download_model "$WHISPER_URL" "$MODELS_DIR/$WHISPER_FILE" "Whisper model" ""
 
 # Download LLM model (GGUF magic bytes = 0x47475546 = "GGUF")
-download_model "$LLM_URL" "$MODELS_DIR/$LLM_FILE" "LLM model" "47475546"
+download_model "$LLM_URL" "$MODELS_DIR/$LLM_FILE" "$LLM_LABEL" "47475546"
 
 # ── 3. Create convenience scripts ─────────────────────────────────────
 step "Writing serve script..."
@@ -244,15 +265,14 @@ echo -e "${GREEN}═════════════════════
 echo ""
 echo "  Models stored in: $MODELS_DIR"
 echo ""
-echo "  Quick start:"
-echo "    Terminal 1:  npm run serve          (starts LLM + whisper servers)"
-echo "    Terminal 2:  npm start              (starts the diary app)"
-echo ""
-  echo "  Or use your own model:"
-  echo "    LLM_REPO=unsloth/gemma-4-E4B-it-GGUF \\"
-  echo "    LLM_FILE=gemma-4-E4B-it-Q4_K_M.gguf \\"
-  echo "    npm run setup"
+  echo "  Quick start:"
+  echo "    Terminal 1:  npm run serve          (starts LLM + whisper servers)"
+  echo "    Terminal 2:  npm start              (starts the diary app)"
   echo ""
-  echo "  GGUF repos available at: https://huggingface.co/models?search=gemma-4-E4B-it-GGUF"
+  echo "  Switch model later:"
+  echo "    MODEL=2 npm run setup               (use E2B instead of E4B)"
+  echo "    MODEL=4 npm run setup               (switch back to E4B)"
+  echo ""
+  echo "  GGUF repos available at: https://huggingface.co/models?search=gemma-4-"
   echo ""
   echo "  Open: http://localhost:3456"

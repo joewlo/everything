@@ -5,9 +5,10 @@
 param(
   [string]$ModelsDir = "$env:USERPROFILE\.everything\models",
   [string]$BinDir = "$env:USERPROFILE\.everything\bin",
-  [string]$LLMRepo = "ggml-org/gemma-4-E4B-it-GGUF",
-  [string]$LLMFile = "gemma-4-E4B-it-Q4_K_M.gguf",
-  [string]$WhisperFile = "ggml-base.en.bin"
+  [string]$LLMRepo = "",
+  [string]$LLMFile = "",
+  [string]$WhisperFile = "ggml-base.en.bin",
+  [string]$Model = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -110,7 +111,29 @@ if (-not (Test-Path $whisperExe)) {
   Write-Host "  ✓ whisper-server.exe already installed" -ForegroundColor Green
 }
 
-# ── 3. Download models ────────────────────────────────────────────────
+# ── 3. Choose model ───────────────────────────────────────────────────
+Write-Host ""
+
+if (-not $Model) {
+  Write-Host "  Choose a model:" -ForegroundColor White
+  Write-Host "    1) Gemma 4 E2B (2.3B effective, fast - best for laptops)" -ForegroundColor Gray
+  Write-Host "    2) Gemma 4 E4B (4.5B effective, smarter - default)" -ForegroundColor Gray
+  Write-Host ""
+  $choice = Read-Host "  Enter 1 or 2 [2]"
+  if ($choice -eq "1") { $Model = "2" } else { $Model = "4" }
+}
+
+if ($Model -eq "2") {
+  if (-not $LLMRepo) { $LLMRepo = "ggml-org/gemma-4-E2B-it-GGUF" }
+  if (-not $LLMFile) { $LLMFile = "gemma-4-E2B-it-Q4_K_M.gguf" }
+  $LLMLabel = "Gemma 4 E2B (2.3B)"
+} else {
+  if (-not $LLMRepo) { $LLMRepo = "ggml-org/gemma-4-E4B-it-GGUF" }
+  if (-not $LLMFile) { $LLMFile = "gemma-4-E4B-it-Q4_K_M.gguf" }
+  $LLMLabel = "Gemma 4 E4B (4.5B)"
+}
+
+# ── 4. Download models ────────────────────────────────────────────────
 Write-Host ""
 
 function Download-Model {
@@ -154,7 +177,7 @@ Download-Model -Url $whisperUrl -Dest "$ModelsDir\$WhisperFile" -Label "Whisper 
 
 # LLM model
 $llmUrl = "https://huggingface.co/$LLMRepo/resolve/main/$LLMFile"
-Download-Model -Url $llmUrl -Dest "$ModelsDir\$LLMFile" -Label "LLM model ($LLMRepo)" -Magic "47475546"
+Download-Model -Url $llmUrl -Dest "$ModelsDir\$LLMFile" -Label "$LLMLabel ($LLMRepo)" -Magic "47475546"
 
 # ── 4. Create serve script ────────────────────────────────────────────
 Write-Host ""
