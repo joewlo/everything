@@ -12,6 +12,27 @@ const app = express();
 const PORT = process.env.PORT || 3456;
 const NOTES_DIR = path.join(__dirname, 'notes');
 const TODOS_FILE = path.join(__dirname, 'todos.json');
+const PROMPTS_FILE = path.join(__dirname, 'prompts.json');
+
+// Default prompts
+const DEFAULT_PROMPTS = {
+  generateTitle: 'Generate a short title (3-6 words) for this note. Return ONLY the title, nothing else. No quotes, no punctuation at the end. Be descriptive.',
+  summarize: 'Summarize the following note concisely in 2-3 sentences. Be factual and brief.',
+  reflect: 'You are a thoughtful personal coach. Based on the following note, provide a brief reflection. What patterns do you notice? What might the person be feeling? Offer one gentle insight or question to consider. Keep it to 3-4 sentences.',
+  extractActions: "Extract all action items, todos, or things that need doing from this note. For each action, if a specific date or deadline is mentioned (e.g., 'by Friday', 'due March 15', 'tomorrow'), include it as a due date in ISO format. Return ONLY a JSON array of objects with 'text' and 'dueDate' fields. dueDate should be null if no date is specified.\n\nExample output:\n[{\"text\":\"Buy milk\",\"dueDate\":null},{\"text\":\"Submit report\",\"dueDate\":\"2026-03-15T00:00:00Z\"},{\"text\":\"Call dentist tomorrow\",\"dueDate\":\"2026-05-03T00:00:00Z\"}]\n\nIf there are no action items, return []. Do not include any other text. Today's date is __TODAY__.",
+  askSearch: 'Extract search keywords from this question. Return ONLY a comma-separated list of terms to grep for. No other text. Lowercase. Example: "what did I discuss with Sarah about the budget" → "sarah,budget,discuss,meeting,money,finance,q3,marketing"',
+  askAnswer: "Answer based ONLY on the notes below. Cite notes by number (e.g., \"Note 1\"). Be concise. If the answer isn't there, say so.\n\nNOTES:\n__CONTEXT__",
+};
+
+async function getPrompts() {
+  try {
+    const raw = await fs.readFile(PROMPTS_FILE, 'utf-8');
+    const user = JSON.parse(raw);
+    return { ...DEFAULT_PROMPTS, ...user };
+  } catch {
+    return { ...DEFAULT_PROMPTS };
+  }
+}
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
@@ -248,11 +269,12 @@ app.post('/api/ask', async (req, res) => {
     if (!question) return res.status(400).json({ error: 'Question required' });
 
     // Step 1: Ask LLM for grep terms
+    const prompts = await getPrompts();
     let grepTerms = question.toLowerCase().split(/\s+/).filter(w => w.length > 2);
 
     try {
       const raw = await callAI(
-        'Extract search keywords from this question. Return ONLY a comma-separated list of terms to grep for. No other text. Lowercase. Example: "what did I discuss with Sarah about the budget" → "sarah,budget,discuss,meeting,money,finance,q3,marketing"',
+        prompts.askSearch,
         question
       );
       const extraTerms = raw.split(/[,|\n]+/).map(t => t.trim().toLowerCase()).filter(Boolean);
@@ -315,10 +337,7 @@ app.post('/api/ask', async (req, res) => {
 
     try {
       const answer = await callAI(
-        `Answer based ONLY on the notes below. Cite notes by number (e.g., "Note 1"). Be concise. If the answer isn't there, say so.
-
-NOTES:
-${context}`,
+        prompts.askAnswer.replace('__CONTEXT__', context),
         question
       );
       res.json({
@@ -336,6 +355,33 @@ ${context}`,
         matchedCount: results.length,
       });
     }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── PROMPTS API ──────────────────────────────────────────────────────
+
+app.get('/api/prompts', async (_req, res) => {
+  try {
+    res.json(await getPrompts());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/prompts', async (req, res) => {
+  try {
+    // Only save keys that differ from defaults
+    const incoming = req.body || {};
+    const custom = {};
+    for (const [key, value] of Object.entries(incoming)) {
+      if (value && value !== DEFAULT_PROMPTS[key]) {
+        custom[key] = value;
+      }
+    }
+    await fs.writeFile(PROMPTS_FILE, JSON.stringify(custom, null, 2), 'utf-8');
+    res.json({ saved: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -390,8 +436,9 @@ app.post('/api/notes/:id/generate-title', async (req, res) => {
       return res.json({ title: '' });
     }
 
+    const prompts = await getPrompts();
     const title = await callAI(
-      'Generate a short title (3-6 words) for this note. Return ONLY the title, nothing else. No quotes, no punctuation at the end. Be descriptive.',
+      req.body.systemPrompt || prompts.generateTitle,
       note.content.substring(0, 2000)
     );
 
@@ -441,8 +488,9 @@ async function callAI(systemPrompt, userContent) {
 app.post('/api/notes/:id/summarize', async (req, res) => {
   try {
     const note = await readNote(req.params.id);
+    const prompts = await getPrompts();
     const summary = await callAI(
-      'Summarize the following note concisely in 2-3 sentences. Be factual and brief.',
+      req.body.systemPrompt || prompts.summarize,
       note.content
     );
     note.summary = summary;
@@ -457,8 +505,9 @@ app.post('/api/notes/:id/summarize', async (req, res) => {
 app.post('/api/notes/:id/reflect', async (req, res) => {
   try {
     const note = await readNote(req.params.id);
+    const prompts = await getPrompts();
     const reflection = await callAI(
-      'You are a thoughtful personal coach. Based on the following note, provide a brief reflection. What patterns do you notice? What might the person be feeling? Offer one gentle insight or question to consider. Keep it to 3-4 sentences.',
+      req.body.systemPrompt || prompts.reflect,
       note.content
     );
     note.reflection = reflection;
@@ -473,13 +522,9 @@ app.post('/api/notes/:id/reflect', async (req, res) => {
 app.post('/api/notes/:id/actions', async (req, res) => {
   try {
     const note = await readNote(req.params.id);
+    const prompts = await getPrompts();
     const text = await callAI(
-      `Extract all action items, todos, or things that need doing from this note. For each action, if a specific date or deadline is mentioned (e.g., "by Friday", "due March 15", "tomorrow"), include it as a due date in ISO format. Return ONLY a JSON array of objects with "text" and "dueDate" fields. dueDate should be null if no date is specified.
-
-Example output:
-[{"text":"Buy milk","dueDate":null},{"text":"Submit report","dueDate":"2026-03-15T00:00:00Z"},{"text":"Call dentist tomorrow","dueDate":"2026-05-03T00:00:00Z"}]
-
-If there are no action items, return []. Do not include any other text. Today's date is ${new Date().toISOString().slice(0, 10)}.`,
+      (req.body.systemPrompt || prompts.extractActions).replace('__TODAY__', new Date().toISOString().slice(0, 10)),
       note.content
     );
 

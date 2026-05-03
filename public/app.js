@@ -1343,6 +1343,44 @@ async function sendChatMessage() {
   history.scrollTop = history.scrollHeight;
 }
 
+// ── PROMPT EDITOR ────────────────────────────────────────────────────
+async function openPromptsModal() {
+  $('#prompts-modal').style.display = 'flex';
+  try {
+    const res = await fetch('/api/prompts');
+    const prompts = await res.json();
+    $('#prompt-title').value = prompts.generateTitle || '';
+    $('#prompt-summarize').value = prompts.summarize || '';
+    $('#prompt-reflect').value = prompts.reflect || '';
+    $('#prompt-actions').value = prompts.extractActions || '';
+    $('#prompt-askSearch').value = prompts.askSearch || '';
+    $('#prompt-askAnswer').value = prompts.askAnswer || '';
+  } catch {}
+}
+
+async function savePrompts() {
+  const body = {
+    generateTitle: $('#prompt-title').value.trim(),
+    summarize: $('#prompt-summarize').value.trim(),
+    reflect: $('#prompt-reflect').value.trim(),
+    extractActions: $('#prompt-actions').value.trim(),
+    askSearch: $('#prompt-askSearch').value.trim(),
+    askAnswer: $('#prompt-askAnswer').value.trim(),
+  };
+  try {
+    await fetch('/api/prompts', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    $('#prompts-modal').style.display = 'none';
+    toast('Prompts saved', 'success');
+  } catch { toast('Failed to save', 'error'); }
+}
+
+async function resetPrompts() {
+  if (!confirm('Reset all prompts to defaults?')) return;
+  await fetch('/api/prompts', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({}) });
+  await openPromptsModal();
+  toast('Prompts reset', 'success');
+}
+
 // ── EVENT BINDINGS ───────────────────────────────────────────────────
 function bindEvents() {
   $('#btn-new-note').addEventListener('click', createNewNote);
@@ -1391,6 +1429,12 @@ function bindEvents() {
 
   // Theme toggle
   $('#btn-theme').addEventListener('click', toggleTheme);
+
+  $('#btn-edit-prompts').addEventListener('click', openPromptsModal);
+  $('#btn-close-prompts').addEventListener('click', () => { $('#prompts-modal').style.display = 'none'; });
+  $('#prompts-modal').addEventListener('click', e => { if (e.target === $('#prompts-modal')) $('#prompts-modal').style.display = 'none'; });
+  $('#btn-save-prompts').addEventListener('click', savePrompts);
+  $('#btn-reset-prompts').addEventListener('click', resetPrompts);
 
   // Chat modal
   $('#btn-ask').addEventListener('click', openChat);
