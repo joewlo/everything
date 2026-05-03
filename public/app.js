@@ -257,9 +257,30 @@ function markDirty() {
 }
 
 async function autoSave(silent) {
-  if (!state.activeId) return;
   const title = $('#note-title').value.trim();
   const content = $('#note-content').value;
+
+  // Don't save completely empty drafts
+  if (state.draft && !title && !content.trim()) return;
+
+  // Create the note on first save of a draft
+  if (state.draft) {
+    try {
+      const note = await API.createNote({ title: title || content.split('\n')[0].substring(0, 80), content, source: 'typed' });
+      currentNote = note;
+      state.activeId = note.id;
+      state.draft = false;
+      state.dirty = false;
+      await refreshNotes();
+      renderNoteList();
+      return;
+    } catch (err) {
+      if (!silent) toast('Save failed: ' + err.message, 'error');
+      return;
+    }
+  }
+
+  if (!state.activeId) return;
 
   try {
     await API.updateNote(state.activeId, { title, content });
@@ -271,6 +292,7 @@ async function autoSave(silent) {
 }
 
 async function generateTitle() {
+  if (state.draft) await autoSave(true);
   if (!state.activeId) return;
   const spinner = $('#title-spinner');
   spinner.style.display = 'inline';
@@ -301,29 +323,34 @@ async function refreshNotesSilent() {
 async function createNewNote() {
   if (state.dirty && state.activeId) autoSave(true);
 
-  try {
-    const note = await API.createNote({ title: '', content: '', source: 'typed' });
-    currentNote = note;
-    state.activeId = note.id;
-    state.dirty = false;
-    await refreshNotes();
-    $('#empty-state').style.display = 'none';
-    $('#editor').style.display = 'flex';
-    $('#note-title').value = '';
-    $('#note-content').value = '';
-    $('#note-meta').textContent = 'New note';
-    $('#ai-results').innerHTML = '<div style="color:var(--text-dim);font-size:12px;padding:8px 0">Press Save to generate summary, reflection &amp; actions.</div>';
-    updateWordCount();
-    updateAIActionButtons();
-    renderNoteList();
-    $('#note-content').focus();
-  } catch (err) {
-    toast('Failed to create note: ' + err.message, 'error');
-  }
+  // Start a draft — don't persist until content exists
+  currentNote = { id: null, title: '', content: '', date: new Date().toISOString(), tags: [], source: 'typed' };
+  state.activeId = null;
+  state.draft = true;
+  state.dirty = false;
+
+  $('#empty-state').style.display = 'none';
+  $('#editor').style.display = 'flex';
+  $('#note-title').value = '';
+  $('#note-content').value = '';
+  $('#note-meta').textContent = 'New note';
+  $('#ai-results').innerHTML = '<div style="color:var(--text-dim);font-size:12px;padding:8px 0">Press Save to generate summary, reflection &amp; actions.</div>';
+  updateWordCount();
+  updateAIActionButtons();
+  renderNoteList();
+  $('#note-content').focus();
 }
 
 async function deleteCurrentNote() {
-  if (!state.activeId) return;
+  if (!state.activeId && !state.draft) return;
+  if (state.draft) {
+    // Discard empty draft
+    state.draft = false;
+    state.activeId = null;
+    currentNote = null;
+    showEmpty();
+    return;
+  }
   if (!confirm('Delete this note?')) return;
 
   try {
@@ -425,7 +452,7 @@ function renderAIResults() {
 }
 
 function updateAIActionButtons() {
-  const hasNote = !!state.activeId;
+  const hasNote = !!(state.activeId || state.draft);
   $('#btn-summarize').disabled = !hasNote;
   $('#btn-reflect').disabled = !hasNote;
   $('#btn-extract-actions').disabled = !hasNote;
@@ -471,10 +498,18 @@ async function runAIAction(action) {
 
 // Run full pipeline: title → summarize → reflect → actions (called by save button)
 async function runFullPipeline() {
-  if (!state.activeId) return;
   const content = $('#note-content').value.trim();
   const title = $('#note-title').value.trim();
   if (!content) return;
+
+  // Create note if it's a draft
+  if (state.draft) {
+    await autoSave(true);
+    // autoSave creates the note and sets activeId
+    if (state.draft) return; // save failed
+  }
+
+  if (!state.activeId) return;
 
   const container = $('#ai-results');
   const steps = [];
@@ -987,7 +1022,7 @@ async function stopRecording() {
     const data = await res.json();
 
     if (data.text) {
-      if (!state.activeId) {
+      if (!state.activeId && !state.draft) {
         await createNewNote();
       }
       const textarea = $('#note-content');
@@ -1070,7 +1105,10 @@ function setupDragDrop() {
 
       if (isText) {
         textFiles.push(file);
-      } else if (state.activeId) {
+      } else if (state.activeId || state.draft) {
+        // Create note if draft first
+        if (state.draft) await autoSave(true);
+        if (!state.activeId) continue;
         // Upload binary as attachment to current note
         try {
           const formData = new FormData();
@@ -1108,7 +1146,7 @@ function setupDragDrop() {
       try {
         const content = await readFileContent(file);
         if (!content) continue;
-        if (state.activeId) {
+        if (state.activeId || state.draft) {
           const textarea = $('#note-content');
           const cursor = textarea.selectionStart;
           const header = `\n## ${file.name}\n\n`;
