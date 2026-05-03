@@ -574,4 +574,15 @@ body {
   #editor-footer .footer-left, #editor-footer .footer-right { gap: 8px; }
 
   #right-top, #right-bottom { }
+  #right-split-handle { display: none; }
+  #right-panel.open {
+    display: flex; flex-direction: column; gap: 0;
+  }
+  #right-panel.open #right-top {
+    flex: none; display: block; overflow: visible;
+  }
+  #right-panel.open #right-bottom {
+    flex: 1; display: flex; flex-direction: column;
+    overflow-y: auto; min-height: 120px;
+  }
 }
