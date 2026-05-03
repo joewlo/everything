@@ -299,11 +299,11 @@ async function refreshNotesSilent() {
 }
 
 async function createNewNote() {
-  // Fire-and-forget save previous note (don't block on AI pipeline)
   if (state.dirty && state.activeId) autoSave(true);
 
   try {
     const note = await API.createNote({ title: '', content: '', source: 'typed' });
+    currentNote = note;
     state.activeId = note.id;
     state.dirty = false;
     await refreshNotes();
@@ -312,8 +312,8 @@ async function createNewNote() {
     $('#note-title').value = '';
     $('#note-content').value = '';
     $('#note-meta').textContent = 'New note';
+    $('#ai-results').innerHTML = '<div style="color:var(--text-dim);font-size:12px;padding:8px 0">Press Save to generate summary, reflection &amp; actions.</div>';
     updateWordCount();
-    renderAIResults();
     updateAIActionButtons();
     renderNoteList();
     $('#note-content').focus();
@@ -367,8 +367,8 @@ function showEmpty() {
   $('#editor').style.display = 'none';
   state.activeId = null;
   currentNote = null;
+  $('#ai-results').innerHTML = '';
   updateAIActionButtons();
-  renderAIResults();
   renderNoteList();
 }
 
