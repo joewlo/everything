@@ -27,7 +27,7 @@ fi
 
 if [ "$LLM_SIZE" = "2" ]; then
   LLM_REPO="${LLM_REPO:-ggml-org/gemma-4-E2B-it-GGUF}"
-  LLM_FILE="${LLM_FILE:-gemma-4-E2B-it-Q4_K_M.gguf}"
+  LLM_FILE="${LLM_FILE:-gemma-4-E2B-it-Q8_0.gguf}"
   LLM_LABEL="Gemma 4 E2B (2.3B)"
 else
   LLM_REPO="${LLM_REPO:-ggml-org/gemma-4-E4B-it-GGUF}"

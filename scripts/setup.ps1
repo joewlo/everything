@@ -125,7 +125,7 @@ if (-not $Model) {
 
 if ($Model -eq "2") {
   if (-not $LLMRepo) { $LLMRepo = "ggml-org/gemma-4-E2B-it-GGUF" }
-  if (-not $LLMFile) { $LLMFile = "gemma-4-E2B-it-Q4_K_M.gguf" }
+  if (-not $LLMFile) { $LLMFile = "gemma-4-E2B-it-Q8_0.gguf" }
   $LLMLabel = "Gemma 4 E2B (2.3B)"
 } else {
   if (-not $LLMRepo) { $LLMRepo = "ggml-org/gemma-4-E4B-it-GGUF" }
