@@ -877,6 +877,8 @@ let audioStream = null;
 let audioProcessor = null;
 let audioChunks = [];
 let totalSamples = 0;
+let liveRecognition = null;
+let liveText = '';
 
 async function startRecording() {
   if (!isVoiceSupported()) {
@@ -885,11 +887,11 @@ async function startRecording() {
   }
 
   try {
+    // Audio capture for whisper
     audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     audioContext = new AudioContext({ sampleRate: 16000 });
     const source = audioContext.createMediaStreamSource(audioStream);
 
-    // Use AudioWorklet if available, otherwise ScriptProcessor fallback
     if (audioContext.audioWorklet) {
       await audioContext.audioWorklet.addModule(URL.createObjectURL(
         new Blob([`
@@ -905,7 +907,6 @@ async function startRecording() {
           registerProcessor('recorder-processor', RecorderProcessor);
         `], { type: 'application/javascript' })
       ));
-
       const worklet = new AudioWorkletNode(audioContext, 'recorder-processor');
       worklet.port.onmessage = (e) => {
         audioChunks.push(new Float32Array(e.data));
@@ -915,7 +916,6 @@ async function startRecording() {
       source.connect(worklet);
       worklet.connect(audioContext.destination);
     } else {
-      // Fallback: ScriptProcessor (deprecated but widely supported)
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
       processor.onaudioprocess = (e) => {
         const data = new Float32Array(e.inputBuffer.getChannelData(0));
@@ -925,6 +925,45 @@ async function startRecording() {
       audioProcessor = processor;
       source.connect(processor);
       processor.connect(audioContext.destination);
+    }
+
+    // Live streaming preview via browser SpeechRecognition
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      liveRecognition = new SpeechRecognition();
+      liveRecognition.continuous = true;
+      liveRecognition.interimResults = true;
+      liveRecognition.lang = 'en-US';
+      liveText = '';
+
+      liveRecognition.onresult = (event) => {
+        let interim = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i];
+          if (result.isFinal) {
+            liveText += result[0].transcript + ' ';
+          } else {
+            interim += result[0].transcript;
+          }
+        }
+
+        if (!state.activeId && !state.draft) {
+          createNewNote();
+        }
+        const textarea = $('#note-content');
+        // Placeholder text to mark live preview area
+        const baseContent = textarea.value.replace(/\n\[live transcription\]\n.*$/, '');
+        textarea.value = baseContent + '\n[live transcription]\n' + liveText + interim;
+        textarea.scrollTop = textarea.scrollHeight;
+        updateWordCount();
+        updatePreview();
+      };
+
+      liveRecognition.onerror = () => {
+        // silently fail — whisper is the primary
+      };
+
+      liveRecognition.start();
     }
 
     state.isRecording = true;
@@ -984,7 +1023,13 @@ async function stopRecording() {
   $('#btn-record').style.display = 'flex';
   $('#btn-stop').style.display = 'none';
 
-  // Disconnect and close
+  // Stop live speech recognition
+  if (liveRecognition) {
+    liveRecognition.stop();
+    liveRecognition = null;
+  }
+
+  // Disconnect audio
   audioStream.getTracks().forEach(t => t.stop());
   if (audioProcessor) {
     audioProcessor.disconnect();
@@ -1006,6 +1051,9 @@ async function stopRecording() {
   audioChunks = [];
   totalSamples = 0;
 
+  // Save the note if draft
+  if (state.draft) await autoSave(true);
+
   // Send to whisper.cpp via server
   try {
     const formData = new FormData();
@@ -1022,53 +1070,39 @@ async function stopRecording() {
     const data = await res.json();
 
     if (data.text) {
-      if (!state.activeId && !state.draft) {
-        await createNewNote();
-      }
       const textarea = $('#note-content');
-      const current = textarea.value;
-      const separator = current && !current.endsWith('\n') ? '\n\n' : '';
-      textarea.value = current + separator + data.text;
+      // Replace live preview text with whisper's accurate transcription
+      const baseContent = textarea.value.replace(/\n\[live transcription\]\n.*$/, '').trim();
+      const separator = baseContent ? '\n\n' : '';
+      textarea.value = baseContent + separator + data.text;
+      liveText = '';
       markDirty();
       updateWordCount();
       updatePreview();
-      toast('Transcription added', 'success');
+
+      // Auto-save immediately after transcription
+      autoSave(true);
+      toast('Transcribed', 'success');
+    } else {
+      // Keep browser's live text if whisper returned empty
+      const textarea = $('#note-content');
+      textarea.value = textarea.value.replace(/\n\[live transcription\]\n/, '\n');
+      liveText = '';
+      markDirty();
+      updateWordCount();
+      updatePreview();
+      autoSave(true);
     }
   } catch (err) {
+    // Whisper failed — keep browser's live transcription
+    const textarea = $('#note-content');
+    textarea.value = textarea.value.replace(/\n\[live transcription\]\n/, '\n');
+    liveText = '';
+    markDirty();
+    updateWordCount();
+    updatePreview();
     toast(err.message, 'error');
-    if (!err.message.includes('Web Speech')) {
-      tryBrowserSpeechAPI();
-    }
   }
-}
-
-// Fallback: browser's built-in Web Speech API
-function tryBrowserSpeechAPI() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) return;
-
-  const recognition = new SpeechRecognition();
-  recognition.interimResults = false;
-  recognition.lang = 'en-US';
-
-  recognition.onresult = (event) => {
-    const text = event.results[0][0].transcript;
-    if (text && state.activeId) {
-      const textarea = $('#note-content');
-      const current = textarea.value;
-      const separator = current && !current.endsWith('\n') ? '\n\n' : '';
-      textarea.value = current + separator + text;
-      markDirty();
-      updateWordCount();
-      updatePreview();
-    }
-  };
-
-  recognition.onerror = () => {
-    toast('Speech recognition not available.', 'error');
-  };
-
-  recognition.start();
 }
 
 // ── DRAG & DROP ──────────────────────────────────────────────────────
